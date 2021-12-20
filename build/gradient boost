@@ -1,0 +1,423 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Nov 11 19:51:51 2020
+
+@author: senay
+"""
+
+
+import sklearn
+import pandas as pd
+import xgboost as xgb
+import pandas 
+pandas.set_option('display.max_rows', 10)
+import numpy as np
+import os
+os.chdir(r'C:\Users\senay\OneDrive\MSA\Fall3_HW')
+
+train = pd.read_csv('MLProject21_train.csv')
+valid = pd.read_csv('MLProject21_valid.csv')
+test = pd.read_csv('MLProject21_test.csv')
+
+# train_pred = train.drop(['binary.target1', 'binary.target2'], axis=1)
+# train_pred=pd.get_dummies(train_pred)
+
+
+# valid_pred = valid.drop(['binary.target1', 'binary.target2'], axis=1)
+# valid_pred=pd.get_dummies(valid_pred)
+
+# %% Create down sample sets for model selection to not take a year
+def rand_samp(df, x):
+    rand_df = df.sample(x)
+    rand_df = pd.get_dummies(rand_df)
+    rand_pred = rand_df.drop(['cont.target', 'binary.target1', 'binary.target2'], axis=1)
+    rand_tar = rand_df['cont.target']
+    return rand_pred, rand_tar
+
+
+
+## Concatenation and cleaning of training and validation datasets for later use ##
+frames = [train,valid]
+train_valid = pd.concat(frames)
+train_valid =train_valid.drop(['binary.target1', 'binary.target2'], axis=1)
+train_valid = pd.get_dummies(train_valid)
+
+
+
+### Split the full train + validation dataset into x and ys####
+X, y = train_valid.iloc[:,:-1],train_valid.iloc[:,-1]
+
+# data_dmatrix = xgb.DMatrix(data=X,label=y)
+
+
+## Smaller samples of data for testing and tuning of models ##
+X_train, y_train = rand_samp(train, 10000)
+X_valid, y_valid= rand_samp(valid, 10000)
+
+
+
+# evaluate gradient boosting ensemble for regression
+from numpy import mean
+from sklearn.metrics import mean_absolute_error
+from numpy import std
+from sklearn.datasets import make_regression
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import RepeatedKFold
+from sklearn.ensemble import GradientBoostingRegressor
+
+
+
+
+############################# iterate though different max level of boosting layers to get idea of what could be an appropriate parameter #############################
+frame=pd.DataFrame()
+list_trees=[]
+list_mae_val=[]
+list_mae_std=[]
+ns=[1,5,10,15,20,25,30,35,40,45,50,100,200,300,400,500,1000]
+for n in ns:
+    treenum=str(n)
+    model = GradientBoostingRegressor(n_estimators=n)
+    # define the evaluation procedure
+    #cv = RepeatedKFold(n_splits=10, n_repeats=3, random_state=1)
+    model.fit(X_train, y_train)
+    # make a single prediction
+    
+    X_valid.reset_index()
+    y_valid=y_valid.reset_index()
+    
+    y_valid=y_valid.drop(['index'],axis=1)
+    
+    yhat=model.predict(X_valid)
+    
+    y_valid['yhat']=yhat
+
+    mae=mean_absolute_error(y_valid['cont.target'], y_valid['yhat'])
+
+    # evaluate the model
+    #n_scores = cross_val_score(model, X_train, y_train, scoring='neg_mean_absolute_error', cv=cv, n_jobs=-1)
+   
+    
+   
+    list_trees.append(treenum)
+    list_mae_val.append(mae)
+    #list_mae_std.append(mae_std)  
+    # report performance
+    
+
+    print(n)
+    print(mae)
+d = {'Trees':list_trees,'MAE':list_mae_val}    
+
+treecount=pd.DataFrame(d)
+
+print(treecount)
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+plt.plot(treecount['Trees'],treecount['MAE_Mean'])
+plt.title('Gradient Boost')
+plt.xlabel('Trees')
+plt.ylabel('MAE_Mean')
+plt.xticks(rotation=90)
+
+plt.show()
+
+
+from numpy import arange
+    
+    
+############################# iterate though different levels of subsample to balance bias and variance to find the best value #############################
+    
+sampframe=pd.DataFrame()
+list_samps=[]
+list_samp_mae_val=[]
+list_samp_mae_std=[]
+for i in arange(0.1, 1.1, 0.1):
+    sampnum=str(i)
+    model = GradientBoostingRegressor(n_estimators=30,subsample=i)
+    #cv = RepeatedKFold(n_splits=10, n_repeats=3, random_state=1)
+    model.fit(X_train, y_train)
+    # make a single prediction
+    
+    X_valid.reset_index()
+    y_valid=y_valid.reset_index()
+    
+    y_valid=y_valid.drop(['index'],axis=1)
+    
+    yhat=model.predict(X_valid)
+    
+    y_valid['yhat']=yhat
+
+    mae=mean_absolute_error(y_valid['cont.target'], y_valid['yhat'])
+
+    
+   
+    
+    list_samps.append(sampnum)
+    list_samp_mae_val.append(mae)
+    
+  # report performance
+  
+
+    print(i)
+    print(mae)
+e = {'Samps':list_samps,'MAE':list_samp_mae_val}    
+
+sampcount=pd.DataFrame(e)
+    
+
+
+
+plt.plot(sampcount['Samps'],sampcount['MAE'])
+plt.title('Samps')
+plt.xlabel('Samples')
+plt.ylabel('MAE_Mean')
+plt.xticks(rotation=90)
+
+plt.show()
+
+
+
+
+############################# iterate though different levels of max features to determine how many features would be allowed to be included in each split decision #############################
+
+
+
+featframe=pd.DataFrame()
+list_feat=[]
+list_feat_mae_val=[]
+list_feat_mae_std=[]
+for i in arange(1,131):
+    featnum=str(i)
+    model = GradientBoostingRegressor(n_estimators=300,subsample=0.8,max_features=i)
+    # define the evaluation procedure
+    model.fit(X_train, y_train)
+    # make a single prediction
+    
+    X_valid.reset_index()
+    y_valid=y_valid.reset_index()
+    
+    y_valid=y_valid.drop(['index'],axis=1)
+    
+    yhat=model.predict(X_valid)
+    
+    y_valid['yhat']=yhat
+
+    mae=mean_absolute_error(y_valid['cont.target'], y_valid['yhat'])
+    
+    
+    list_feat.append(featnum)
+    list_feat_mae_val.append(mae)
+      
+    # report performance
+    
+
+    print(i)
+    print(mae)
+f = {'Features':list_feat,'MAE':list_feat_mae_val}    
+
+featcount=pd.DataFrame(f)
+
+min(featcount['MAE'])    
+
+plt.plot(featcount['Features'],featcount['MAE'])
+plt.title('Features')
+plt.xlabel('Features')
+plt.ylabel('MAE')
+plt.xticks(np.arange(0, 130, step=10))
+plt.xticks(rotation=90)
+
+plt.show()
+
+
+
+
+############################# iterate though different levels of learning rate to find the best option #############################
+
+
+learnframe=pd.DataFrame()
+list_learn=[]
+list_learn_mae_val=[]
+list_learn_mae_std=[]
+for i in [0.0001, 0.001, 0.01, 0.1, 1.0]:
+    learnnum=str(i)
+    model = GradientBoostingRegressor(n_estimators=300,subsample=0.8,max_features=42,learning_rate=i)
+    # define the evaluation procedure
+    model.fit(X_train, y_train)
+    # make a single prediction
+    
+    X_valid.reset_index()
+    y_valid=y_valid.reset_index()
+    
+    y_valid=y_valid.drop(['index'],axis=1)
+    
+    yhat=model.predict(X_valid)
+    
+    y_valid['yhat']=yhat
+
+    mae=mean_absolute_error(y_valid['cont.target'], y_valid['yhat'])
+    
+    
+    list_learn.append(learnnum)
+    list_learn_mae_val.append(mae)
+      
+    # report performance
+    
+
+    print(i)
+    print(mae)
+f = {'Learn':list_learn,'MAE':list_learn_mae_val}    
+
+learncount=pd.DataFrame(f)
+
+min(learncount['MAE'])    
+
+plt.plot(learncount['Learn'],learncount['MAE'])
+plt.title('learn Rate')
+plt.xlabel('learn')
+plt.ylabel('MAE')
+plt.xticks(np.arange(0, 1, step=.01))
+plt.xticks(rotation=90)
+
+plt.show()
+
+#learning_rate=.001
+
+
+
+############################# iterate though different levels of max_depth to find how deep each tree should be allowed to be #############################
+
+
+depthframe=pd.DataFrame()
+list_depth=[]
+list_depth_mae_val=[]
+list_depth_mae_std=[]
+for i in range(1,11):
+    depthnum=str(i)
+    model = GradientBoostingRegressor(n_estimators=300,subsample=0.8,max_features=42,learning_rate=.001,max_depth=i)
+    # define the evaluation procedure
+    model.fit(X_train, y_train)
+    # make a single prediction
+    
+    X_valid.reset_index()
+    y_valid=y_valid.reset_index()
+    
+    y_valid=y_valid.drop(['index'],axis=1)
+    
+    yhat=model.predict(X_valid)
+    
+    y_valid['yhat']=yhat
+
+    mae=mean_absolute_error(y_valid['cont.target'], y_valid['yhat'])
+    
+    
+    list_depth.append(depthnum)
+    list_depth_mae_val.append(mae)
+      
+    # report performance
+    #print('RMSE: %.3f (%.3f)' % (mean(n_scores), std(n_scores)))
+
+    print(i)
+    print(mae)
+f = {'depth':list_depth,'MAE':list_depth_mae_val}    
+
+depthcount=pd.DataFrame(f)
+
+min(depthcount['MAE'])    
+
+plt.plot(depthcount['depth'],depthcount['MAE'])
+plt.title('depth Rate')
+plt.xlabel('depth')
+plt.ylabel('MAE')
+plt.xticks(np.arange(0, 11, step=1))
+plt.xticks(rotation=90)
+
+plt.show()
+
+
+
+
+################################################ Run tuned model on Validation Data########################################################################
+
+
+###test on full validation##
+
+train_cont=train.drop(['binary.target1', 'binary.target2'], axis=1)
+valid_cont=valid.drop(['binary.target1', 'binary.target2'], axis=1)
+
+X_train_full, y_train_full = train_cont.iloc[:,:-1],train_cont.iloc[:,-1]
+X_valid_full, y_valid_full = valid_cont.iloc[:,:-1],valid_cont.iloc[:,-1]
+
+y_valid_full=pd.DataFrame(y_valid_full,columns=['cont.target'])
+
+X_train_full = pd.get_dummies(X_train_full)
+X_valid_full = pd.get_dummies(X_valid_full)
+
+
+
+model = GradientBoostingRegressor(n_estimators=300,subsample=0.8,max_features=42,learning_rate=.001,max_depth=10)
+
+
+
+# fit the model on the whole dataset
+model.fit(X_train_full, y_train_full)
+# make a single prediction
+
+
+yhat=model.predict(X_valid_full)
+
+dfyhat=pd.DataFrame(yhat,columns=['yhat'])
+
+y_valid_full['yhat']=dfyhat['yhat']
+
+
+
+from sklearn.metrics import mean_absolute_error
+mean_absolute_error(y_valid_full['cont.target'], y_valid_full['yhat'])
+
+
+
+################################################ Run tuned moodel on Test Data#########################################################################
+
+
+frames= [train,valid]
+
+train_valid=pd.concat(frames)
+
+
+
+train_valid_cont=train_valid.drop(['binary.target1', 'binary.target2'], axis=1)
+
+y_valid_full=pd.DataFrame(y_valid_full,columns=['cont.target'])
+
+X_train_valid_full, y_train_valid_full = train_valid_cont.iloc[:,:-1],train_valid_cont.iloc[:,-1] 
+
+
+X_train_valid_full = pd.get_dummies(X_train_valid_full)
+
+
+model = GradientBoostingRegressor(n_estimators=300,subsample=0.8,max_features=42,learning_rate=.001,max_depth=10)
+# fit the model on the whole dataset
+model.fit(X_train_valid_full, y_train_valid_full)
+# make a single prediction
+
+
+test_dum = pd.get_dummies(test)
+
+yhat=model.predict(test_dum)
+
+
+
+dfyhat_test=pd.DataFrame(yhat,columns=['cont.target'])
+
+dfyhat_test['row'] = np.arange(len(dfyhat_test))
+dfyhat_test['row'] =dfyhat_test['row']+1
+
+cols = dfyhat_test.columns.tolist()
+cols = cols[-1:] + cols[:-1]
+dfyhat_test = dfyhat_test[cols]
+dfyhat_test
+
+dfyhat_test.to_csv(r'C:\Users\senay\OneDrive\MSA\Fall3_HW\test_prediction.csv',index=False)
